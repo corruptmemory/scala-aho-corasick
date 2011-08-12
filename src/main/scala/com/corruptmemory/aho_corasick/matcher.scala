@@ -9,6 +9,14 @@ object Matcher {
   type OutputMap = MMap[StateID,MSet[String]]
   type FailureMap = MMap[StateID,Goto]
 
+  case class NextMove(successMap:MMap[StateID,MMap[Char,Goto]] = MMap[StateID,MMap[Char,Goto]](),fail:MMap[StateID,Goto] = MMap[StateID,Goto]()) {
+    def +=(x:(StateID,(Char,Goto))) = {
+      successMap.get(x._1).fold(some = s => s += x._2,
+                                none = successMap += x._1 -> MMap(x._2))
+      this
+    }
+  }
+
   trait Goto {
     val nextID:() => StateID
     val id:StateID = nextID()
@@ -84,5 +92,27 @@ object Matcher {
       }
     }
     (failureMap,outputMap)
+  }
+
+  def computeDFA(rootGoto:Goto,failureMap:FailureMap):NextMove = {
+    val nextMove:NextMove = NextMove()
+    val queue = MQueue[Goto]()
+    rootGoto.values.foreach {
+      case (c,g) => {
+        nextMove += (0 -> (c -> g))
+        queue += g
+      }
+    }
+    while (!queue.isEmpty) {
+      val r = queue.dequeue()
+      r.values.foreach {
+        case (a,s) => {
+          queue += s
+          nextMove += (r.id -> (a -> s))
+        }
+      }
+      nextMove.fail += (r.id -> failureMap(r.id))
+    }
+    nextMove
   }
 }
