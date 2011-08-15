@@ -4,115 +4,117 @@ import scalaz._
 import Scalaz._
 import scala.collection.mutable.{Map => MMap, Set => MSet, Queue => MQueue}
 
-object Matcher {
-  type StateID = Int
-  type OutputMap = MMap[StateID,MSet[String]]
-  type FailureMap = MMap[StateID,Goto]
+class AhoCorasick(charMap:Char => Char = _.toLower) {
+  import AhoCorasick._
+  var currentID:StateID = 0
+  val rootGoto:Goto = new Goto with RootGoto
 
-  case class NextMove(successMap:MMap[StateID,MMap[Char,Goto]] = MMap[StateID,MMap[Char,Goto]](),fail:MMap[StateID,Goto] = MMap[StateID,Goto]()) {
-    def +=(x:(StateID,(Char,Goto))) = {
-      successMap.get(x._1).fold(some = s => s += x._2,
-                                none = successMap += x._1 -> MMap(x._2))
-      this
-    }
+  def nextID():StateID = {
+    val r  = currentID
+    currentID += 1
+    r
   }
 
-  trait Goto {
-    val nextID:() => StateID
+  trait RootGoto {
+    self:Goto =>
+    override def goto(c:Char):Option[Goto] = next.get(c) orElse (some(self))
+  }
+
+  class Goto {
     val id:StateID = nextID()
-    val values:MMap[Char,Goto]
-    def apply(c:Char):Option[Goto]
-    def +=(x:(Char,Goto)):Goto = {
-      values += x
-      x._2
+    val next:MMap[Char,Goto] = MMap[Char,Goto]()
+    var outputs:Option[MSet[String]] = none
+    var fail:Option[Goto] = none
+    def goto(c:Char):Option[Goto] = next.get(c)
+  }
+
+  def +=(in:String):AhoCorasick = {
+    val target = in.map(charMap(_)).foldLeft(rootGoto) {
+      (g,c) => {
+        g.next.get(c).fold(none = {
+                             val n = new Goto
+                             g.next += c -> n
+                             n
+                           },
+                           some = s => s)
+      }
     }
-    def <<(c:Char):Goto = {
-      values.get(c).fold(none = this += (c -> BodyGoto(nextID)),
-                         some = s => s)
-    }
+    target.outputs.fold(none = target.outputs = some(MSet(in)),
+                        some = s => s += in)
+    this
   }
 
-  case class BodyGoto(nextID:() => StateID,values:MMap[Char,Goto] = MMap[Char,Goto]()) extends Goto {
-    def apply(c:Char):Option[Goto] = values.get(c)
-  }
-
-  case class RootGoto(nextID:() => StateID,values:MMap[Char,Goto] = MMap[Char,Goto]()) extends Goto {
-    def apply(c:Char):Option[Goto] = values.get(c) orElse (some(this))
-  }
-
-  class StateIDGen {
-    var currentID:StateID = 0
-    def nextID():StateID = {
-      val r = currentID
-      currentID += 1
-      r
-    }
-  }
-
-  def enter(outputs:Seq[String],charMap:Char => Char = _.toLowerCase):(Goto,OutputMap) = {
-    val idGen = new StateIDGen
-    val rootGoto:Goto = RootGoto(nextID = idGen.nextID _)
-    val outputMap:OutputMap = MMap[StateID,MSet[String]]()
-    def innerEnter(output:String) {
-      val goto = output.map(charMap(_)).foldLeft(rootGoto)((s,c) => s << c)
-      outputMap.get(goto.id).fold(none = outputMap += goto.id -> MSet(output),
-                                  some = s => outputMap += goto.id -> (s += output))
-    }
-    outputs.foreach(innerEnter(_))
-    (rootGoto,outputMap)
-  }
-
-  def computeFailure(rootGoto:Goto,outputMap:OutputMap):(FailureMap,OutputMap) = {
-    val failureMap:FailureMap = MMap[StateID,Goto]()
+  def build():AhoCorasick = {
     val queue = MQueue[Goto]()
-    rootGoto.values.foreach {
-      case (a:Char,s:Goto) => {
-        failureMap += s.id -> rootGoto
+    rootGoto.next.values.foreach {
+      (s:Goto) => {
+        s.fail = some(rootGoto)
         queue += s
       }
     }
     while (!queue.isEmpty) {
       val r = queue.dequeue()
-      r.values.foreach {
+      r.next.foreach {
         case(a:Char,s:Goto) => {
           queue += s
-          var state = failureMap(r.id)
-          while (!state(a).isDefined) {
-            state = failureMap(state.id)
+          var state = r.fail.get
+          while (!state.goto(a).isDefined) {
+            state = state.fail.get
           }
-          val down = state(a).get
-          failureMap += s.id -> down
-          outputMap.get(down.id).foreach {
+          val down = state.goto(a).get
+          s.fail = some(down)
+          down.outputs.foreach {
             dos => {
-              outputMap.get(s.id).fold(none = outputMap += s.id -> dos,
-                                       some = s1 => outputMap += s.id -> (s1 ++ dos))
+              s.outputs.fold(none = s.outputs = some(dos),
+                             some = s1 => s.outputs = some(s1 ++= dos))
             }
           }
         }
       }
     }
-    (failureMap,outputMap)
+    this
   }
 
-  def computeDFA(rootGoto:Goto,failureMap:FailureMap):NextMove = {
-    val nextMove:NextMove = NextMove()
-    val queue = MQueue[Goto]()
-    rootGoto.values.foreach {
-      case (c,g) => {
-        nextMove += (0 -> (c -> g))
-        queue += g
-      }
-    }
-    while (!queue.isEmpty) {
-      val r = queue.dequeue()
-      r.values.foreach {
-        case (a,s) => {
-          queue += s
-          nextMove += (r.id -> (a -> s))
+  def find(in:String):Seq[Match] = {
+    var state = rootGoto
+    val builder = Vector.newBuilder[Match]
+    in.map(charMap(_)).zipWithIndex.foreach {
+      case (c,i) => {
+        while (!state.goto(c).isDefined) { state = state.fail.get }
+        state = state.goto(c).get
+        state.outputs.foreach {
+          s => {
+            builder ++= s.toSeq.map(x => Match(i-x.length+1,x,in.slice(i-x.length+1,i+1)))
+          }
         }
       }
-      nextMove.fail += (r.id -> failureMap(r.id))
     }
-    nextMove
+    builder.result
   }
+
+  def countOutputs():Int = {
+    var cnt = 0
+    def internalCO(g:Goto) {
+      g.outputs.foreach { s=> cnt += s.size }
+      g.next.values.foreach(internalCO(_))
+    }
+    internalCO(rootGoto)
+    cnt
+  }
+
+  def dumpOutputs() {
+    def internalDO(g:Goto) {
+      g.outputs.foreach { s=>
+        println("%d:%s".format(g.id,s))
+      }
+      g.next.values.foreach(internalDO(_))
+    }
+    internalDO(rootGoto)
+  }
+}
+
+object AhoCorasick {
+  type StateID = Int
+  def apply(in:Seq[String]):AhoCorasick =
+    in.foldLeft(new AhoCorasick())((s,v) => s += v)
 }
