@@ -2,7 +2,7 @@ package com.corruptmemory.aho_corasick
 
 import scalaz._
 import Scalaz._
-import scala.collection.mutable.{Map => MMap, Set => MSet, Queue => MQueue}
+import scala.collection.mutable.{Set => MSet, Queue => MQueue}
 
 class AhoCorasick(charMap:Char => Char = _.toLower) {
   import AhoCorasick._
@@ -17,26 +17,33 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
 
   trait RootGoto {
     self:Goto =>
-    override def goto(c:Char):Option[Goto] = next.get(c) orElse (some(self))
+    override def goto(c:Char):Option[Goto] = next.get(c).map(_.data) orElse (some(self))
   }
 
   class Goto {
     val id:StateID = nextID()
-    val next:MMap[Char,Goto] = MMap[Char,Goto]()
+    val next:Node[Goto] = Node(this)
     var outputs:Option[MSet[String]] = none
     var fail:Option[Goto] = none
-    def goto(c:Char):Option[Goto] = next.get(c)
+    def goto(c:Char):Option[Goto] = next.get(c).map(_.data)
+    def failToString:String = {
+      fail.fold(none = "<>",
+                some = s => "<"+s.toString+">")
+    }
+    override def toString:String = {
+      "goto(%d,%s,%s,%s)".format(id,outputs,failToString,next.entries.map(_.map(neToString(_)).mkString("[",",","]")))
+    }
   }
 
   def +=(in:String):AhoCorasick = {
     val target = in.map(charMap(_)).foldLeft(rootGoto) {
       (g,c) => {
         g.next.get(c).fold(none = {
-                             val n = new Goto
+                             val n = (new Goto).next
                              g.next += c -> n
-                             n
+                             n.data
                            },
-                           some = s => s)
+                           some = s => s.data)
       }
     }
     target.outputs.fold(none = target.outputs = some(MSet(in)),
@@ -44,29 +51,46 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
     this
   }
 
+  def neToString(ne:NodeEntry[Goto]):String =
+    "{%s: %s}".format(ne.char,ne.node.data.toString)
+
+  def debugNE(ne:NodeEntry[Goto]) {
+    println(neToString(ne))
+  }
+
+  def debugN(n:Node[Goto]) {
+    println(n.data.toString)
+  }
+
   def build():AhoCorasick = {
     val queue = MQueue[Goto]()
-    rootGoto.next.values.foreach {
-      (s:Goto) => {
-        s.fail = some(rootGoto)
-        queue += s
+    rootGoto.next.entries.get.foreach {
+      (s:NodeEntry[Goto]) => {
+        // debugNE(s)
+        s.node.data.fail = some(rootGoto)
+        queue += s.node.data
       }
     }
     while (!queue.isEmpty) {
       val r = queue.dequeue()
-      r.next.foreach {
-        case(a:Char,s:Goto) => {
-          queue += s
-          var state = r.fail.get
-          while (!state.goto(a).isDefined) {
-            state = state.fail.get
-          }
-          val down = state.goto(a).get
-          s.fail = some(down)
-          down.outputs.foreach {
-            dos => {
-              s.outputs.fold(none = s.outputs = some(dos),
-                             some = s1 => s.outputs = some(s1 ++= dos))
+      r.next.entries.foreach {
+        _.foreach {
+          (xx:NodeEntry[Goto]) => {
+            // debugNE(xx)
+            val a:Char = xx.char
+            val s:Goto = xx.node.data
+            queue += s
+            var state = r.fail.get
+            while (!state.goto(a).isDefined) {
+              state = state.fail.get
+            }
+            val down = state.goto(a).get
+            s.fail = some(down)
+            down.outputs.foreach {
+              dos => {
+                s.outputs.fold(none = s.outputs = some(dos),
+                               some = s1 => s.outputs = some(s1 ++= dos))
+              }
             }
           }
         }
@@ -90,26 +114,6 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
       }
     }
     builder.result
-  }
-
-  def countOutputs():Int = {
-    var cnt = 0
-    def internalCO(g:Goto) {
-      g.outputs.foreach { s=> cnt += s.size }
-      g.next.values.foreach(internalCO(_))
-    }
-    internalCO(rootGoto)
-    cnt
-  }
-
-  def dumpOutputs() {
-    def internalDO(g:Goto) {
-      g.outputs.foreach { s=>
-        println("%d:%s".format(g.id,s))
-      }
-      g.next.values.foreach(internalDO(_))
-    }
-    internalDO(rootGoto)
   }
 }
 
