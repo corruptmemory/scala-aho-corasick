@@ -1,3 +1,4 @@
 package com.corruptmemory.aho_corasick
 
-case class Match(start:Int,target:String,actual:String)
+import AhoCorasick._
+case class Match[T](start:Int,target:String,actual:String,data:T)

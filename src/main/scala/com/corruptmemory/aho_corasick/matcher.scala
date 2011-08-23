@@ -2,18 +2,11 @@ package com.corruptmemory.aho_corasick
 
 import scalaz._
 import Scalaz._
-import scala.collection.mutable.{Set => MSet, Queue => MQueue}
+import scala.collection.mutable.{Queue => MQueue, LinkedList}
 
-class AhoCorasick(charMap:Char => Char = _.toLower) {
+class AhoCorasick[T](charMap:Char => Char = _.toLower) {
   import AhoCorasick._
-  var currentID:StateID = 0
   val rootGoto:Goto = new Goto with RootGoto
-
-  def nextID():StateID = {
-    val r  = currentID
-    currentID += 1
-    r
-  }
 
   trait RootGoto {
     self:Goto =>
@@ -21,9 +14,8 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
   }
 
   class Goto {
-    val id:StateID = nextID()
     val next:Node[Goto] = Node(this)
-    var outputs:Option[MSet[String]] = none
+    var outputs:Option[LinkedList[Data[T]]] = none
     var fail:Option[Goto] = none
     def goto(c:Char):Option[Goto] = next.get(c).map(_.data)
     def failToString:String = {
@@ -31,13 +23,13 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
                 some = s => "<"+s.toString+">")
     }
     override def toString:String = {
-      "goto(%d,%s,%s,%s)".format(id,outputs,failToString,next.entries.map(_.map(neToString(_)).mkString("[",",","]")))
+      "goto(%d,%s,%s,%s)".format(outputs,failToString,next.entries.map(_.map(neToString(_)).mkString("[",",","]")))
     }
   }
 
-  def +=(in:String):AhoCorasick = {
-    if (!in.isEmpty) {
-      val target = in.map(charMap(_)).foldLeft(rootGoto) {
+  def +=(in:Data[T]):AhoCorasick[T] = {
+    if (!in.string.isEmpty) {
+      val target = in.string.map(charMap(_)).foldLeft(rootGoto) {
         (g,c) => {
           g.next.get(c).fold(none = {
                                val n = (new Goto).next
@@ -47,8 +39,8 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
                              some = s => s.data)
         }
       }
-      target.outputs.fold(none = target.outputs = some(MSet(in)),
-                          some = s => s += in)
+      target.outputs.fold(none = target.outputs = some(LinkedList(in)),
+                          some = s => s.+:(in))
     }
     this
   }
@@ -64,7 +56,7 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
     println(n.data.toString)
   }
 
-  def build():AhoCorasick = {
+  def build():AhoCorasick[T] = {
     rootGoto.next.entries.foreach {
         _.foreach {
         (s:NodeEntry[Goto]) => {
@@ -91,7 +83,7 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
             down.outputs.foreach {
               dos => {
                 s.outputs.fold(none = s.outputs = some(dos),
-                               some = s1 => s.outputs = some(s1 ++= dos))
+                               some = s1 => s.outputs = some(s1.++:(dos)))
               }
             }
           }
@@ -102,16 +94,16 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
   }
     val queue = MQueue[Goto]()
 
-  def find(in:String):Seq[Match] = {
+  def find(in:String):Seq[Match[T]] = {
     var state = rootGoto
-    val builder = Vector.newBuilder[Match]
+    val builder = Vector.newBuilder[Match[T]]
     in.map(charMap(_)).zipWithIndex.foreach {
       case (c,i) => {
         while (!state.goto(c).isDefined) { state = state.fail.get }
         state = state.goto(c).get
         state.outputs.foreach {
           s => {
-            builder ++= s.toSeq.map(x => Match(i-x.length+1,x,in.slice(i-x.length+1,i+1)))
+            builder ++= s.toSeq.map(x => Match(i-x.string.length+1,x.string,in.slice(i-x.string.length+1,i+1),x.data))
           }
         }
       }
@@ -121,7 +113,8 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
 }
 
 object AhoCorasick {
-  type StateID = Int
-  def apply(in:Seq[String]):AhoCorasick =
-    in.foldLeft(new AhoCorasick())((s,v) => s += v)
+  case class Data[T](string:String,data:T)
+  implicit def toData[T](x:(String,T)):Data[T] = Data(x._1,x._2)
+  def apply[T](in:Seq[Data[T]], charMap:Char => Char = _.toLower):AhoCorasick[T] =
+    in.foldLeft(new AhoCorasick[T](charMap))((s,v) => s += v)
 }
