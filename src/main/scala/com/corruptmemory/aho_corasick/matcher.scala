@@ -36,18 +36,20 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
   }
 
   def +=(in:String):AhoCorasick = {
-    val target = in.map(charMap(_)).foldLeft(rootGoto) {
-      (g,c) => {
-        g.next.get(c).fold(none = {
-                             val n = (new Goto).next
-                             g.next += c -> n
-                             n.data
-                           },
-                           some = s => s.data)
+    if (!in.isEmpty) {
+      val target = in.map(charMap(_)).foldLeft(rootGoto) {
+        (g,c) => {
+          g.next.get(c).fold(none = {
+                               val n = (new Goto).next
+                               g.next += c -> n
+                               n.data
+                             },
+                             some = s => s.data)
+        }
       }
+      target.outputs.fold(none = target.outputs = some(MSet(in)),
+                          some = s => s += in)
     }
-    target.outputs.fold(none = target.outputs = some(MSet(in)),
-                        some = s => s += in)
     this
   }
 
@@ -63,12 +65,12 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
   }
 
   def build():AhoCorasick = {
-    val queue = MQueue[Goto]()
-    rootGoto.next.entries.get.foreach {
-      (s:NodeEntry[Goto]) => {
-        // debugNE(s)
-        s.node.data.fail = some(rootGoto)
-        queue += s.node.data
+    rootGoto.next.entries.foreach {
+        _.foreach {
+        (s:NodeEntry[Goto]) => {
+          s.node.data.fail = some(rootGoto)
+          queue += s.node.data
+        }
       }
     }
     while (!queue.isEmpty) {
@@ -98,6 +100,7 @@ class AhoCorasick(charMap:Char => Char = _.toLower) {
     }
     this
   }
+    val queue = MQueue[Goto]()
 
   def find(in:String):Seq[Match] = {
     var state = rootGoto
