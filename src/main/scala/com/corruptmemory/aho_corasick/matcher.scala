@@ -4,9 +4,9 @@ import scalaz._
 import Scalaz._
 import scala.collection.mutable.{Queue => MQueue, LinkedList}
 
-class AhoCorasick[T](charMap:Char => Char = _.toLower) {
-  import AhoCorasick._
-  val rootGoto:Goto = new Goto with RootGoto
+class AhoCorasickBuilder[T](charMap:Char => Char = _.toLower) {
+  import AhoCorasickBuilder._
+  var rootGoto:Goto = new Goto with RootGoto
 
   trait RootGoto {
     self:Goto =>
@@ -27,7 +27,26 @@ class AhoCorasick[T](charMap:Char => Char = _.toLower) {
     }
   }
 
-  def +=(in:Data[T]):AhoCorasick[T] = {
+  class AhoCorasick(rootGoto:Goto) {
+    def find(in:String):Seq[Match[T]] = {
+      var state = rootGoto
+      val builder = Vector.newBuilder[Match[T]]
+      in.map(charMap(_)).zipWithIndex.foreach {
+        case (c,i) => {
+          while (!state.goto(c).isDefined) { state = state.fail.get }
+          state = state.goto(c).get
+          state.outputs.foreach {
+            s => {
+              builder ++= s.toSeq.map(x => Match(i-x.string.length+1,x.string,in.slice(i-x.string.length+1,i+1),x.data))
+            }
+          }
+        }
+      }
+      builder.result
+    }
+  }
+
+  def +=(in:Data[T]):AhoCorasickBuilder[T] = {
     if (!in.string.isEmpty) {
       val target = in.string.map(charMap(_)).foldLeft(rootGoto) {
         (g,c) => {
@@ -48,15 +67,8 @@ class AhoCorasick[T](charMap:Char => Char = _.toLower) {
   def neToString(ne:NodeEntry[Goto]):String =
     "{%s: %s}".format(ne.char,ne.node.data.toString)
 
-  def debugNE(ne:NodeEntry[Goto]) {
-    println(neToString(ne))
-  }
-
-  def debugN(n:Node[Goto]) {
-    println(n.data.toString)
-  }
-
-  def build():AhoCorasick[T] = {
+  def build():AhoCorasick = {
+    val queue = MQueue[Goto]()
     rootGoto.next.entries.foreach {
         _.foreach {
         (s:NodeEntry[Goto]) => {
@@ -90,31 +102,15 @@ class AhoCorasick[T](charMap:Char => Char = _.toLower) {
         }
       }
     }
-    this
-  }
-    val queue = MQueue[Goto]()
-
-  def find(in:String):Seq[Match[T]] = {
-    var state = rootGoto
-    val builder = Vector.newBuilder[Match[T]]
-    in.map(charMap(_)).zipWithIndex.foreach {
-      case (c,i) => {
-        while (!state.goto(c).isDefined) { state = state.fail.get }
-        state = state.goto(c).get
-        state.outputs.foreach {
-          s => {
-            builder ++= s.toSeq.map(x => Match(i-x.string.length+1,x.string,in.slice(i-x.string.length+1,i+1),x.data))
-          }
-        }
-      }
-    }
-    builder.result
+    val result = new AhoCorasick(rootGoto)
+    rootGoto = new Goto with RootGoto
+    result
   }
 }
 
-object AhoCorasick {
+object AhoCorasickBuilder {
   case class Data[T](string:String,data:T)
   implicit def toData[T](x:(String,T)):Data[T] = Data(x._1,x._2)
-  def apply[T](in:Seq[Data[T]], charMap:Char => Char = _.toLower):AhoCorasick[T] =
-    in.foldLeft(new AhoCorasick[T](charMap))((s,v) => s += v)
+  def apply[T](in:Seq[Data[T]], charMap:Char => Char = _.toLower):AhoCorasickBuilder[T] =
+    in.foldLeft(new AhoCorasickBuilder[T](charMap))((s,v) => s += v)
 }
