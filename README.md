@@ -24,7 +24,7 @@ You can also use the `+=` operator on the builder to add elements
 
 ### `build()`
 
-Then the `build()` method is invoked returns a finder and clears out all the data in the builder.
+When the `build()` method is invoked returns a finder and clears out all the data in the builder.
 It is possible to reuse the builder without interfering with already generated finders.
 
 ## Matched results
