@@ -83,7 +83,7 @@ class AhoCorasickBuilder[T](charMap:Char => Char = _.toLower) {
       val target = in.string.map(charMap(_)).foldLeft(rootGoto) {
         (g,c) => {
           g.next.get(c).fold(none = {
-
+                               val n = (new Goto).next
                                g.next += c -> n
                                n.data
                              },
