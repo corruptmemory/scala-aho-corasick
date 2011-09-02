@@ -76,7 +76,7 @@ class AhoCorasickBuilder[T](charMap:Char => Char = _.toLower) {
   /** Add data to the builder
    *
    * @param in value of type `Data[T]` to add to the trie.
-   * @returns the builder
+   * @return the builder
    */
   def +=(in:Data[T]):AhoCorasickBuilder[T] = {
     if (!in.string.isEmpty) {
