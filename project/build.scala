@@ -4,7 +4,7 @@ import Keys._
 object BuildSettings {
   val buildOrganization = "com.corruptmemory"
   val buildScalaVersion = "2.9.1"
-  val buildVersion      = "0.1"
+  val buildVersion      = "0.2-SNAPSHOT"
 
   val buildSettings = Defaults.defaultSettings ++ Seq (organization := buildOrganization,
 						       scalaVersion := buildScalaVersion,
