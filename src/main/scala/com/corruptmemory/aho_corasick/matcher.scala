@@ -24,16 +24,21 @@ import scalaz._
 import Scalaz._
 import scala.collection.mutable.{Queue => MQueue, LinkedList}
 
+/** A builder for the Aho-Corasick data structure
+ *
+ * @param charMap A function `Char => Char` that is applied to each character ''before'' being inserted
+ *                into the trie.
+ */
 class AhoCorasickBuilder[T](charMap:Char => Char = _.toLower) {
   import AhoCorasickBuilder._
-  var rootGoto:Goto = new Goto with RootGoto
+  private var rootGoto:Goto = new Goto with RootGoto
 
-  trait RootGoto {
+  private trait RootGoto {
     self:Goto =>
     override def goto(c:Char):Option[Goto] = next.get(c).map(_.data) orElse (some(self))
   }
 
-  class Goto {
+  private class Goto {
     val next:Node[Goto] = Node(this)
     var outputs:Option[LinkedList[Data[T]]] = none
     var fail:Option[Goto] = none
@@ -47,6 +52,8 @@ class AhoCorasickBuilder[T](charMap:Char => Char = _.toLower) {
     }
   }
 
+  /** The read-only Aho-Corasick finder
+   */
   class AhoCorasick(rootGoto:Goto) {
     def find(in:String):Seq[Match[T]] = {
       var state = rootGoto
@@ -66,12 +73,17 @@ class AhoCorasickBuilder[T](charMap:Char => Char = _.toLower) {
     }
   }
 
+  /** Add data to the builder
+   *
+   * @param in value of type `Data[T]` to add to the trie.
+   * @returns the builder
+   */
   def +=(in:Data[T]):AhoCorasickBuilder[T] = {
     if (!in.string.isEmpty) {
       val target = in.string.map(charMap(_)).foldLeft(rootGoto) {
         (g,c) => {
           g.next.get(c).fold(none = {
-                               val n = (new Goto).next
+
                                g.next += c -> n
                                n.data
                              },
@@ -87,6 +99,8 @@ class AhoCorasickBuilder[T](charMap:Char => Char = _.toLower) {
   def neToString(ne:NodeEntry[Goto]):String =
     "{%s: %s}".format(ne.char,ne.node.data.toString)
 
+  /** Build the Aho-Corasick finder instance.
+   */
   def build():AhoCorasick = {
     val queue = MQueue[Goto]()
     rootGoto.next.entries.foreach {
@@ -102,7 +116,6 @@ class AhoCorasickBuilder[T](charMap:Char => Char = _.toLower) {
       r.next.entries.foreach {
         _.foreach {
           (xx:NodeEntry[Goto]) => {
-            // debugNE(xx)
             val a:Char = xx.char
             val s:Goto = xx.node.data
             queue += s
@@ -128,7 +141,11 @@ class AhoCorasickBuilder[T](charMap:Char => Char = _.toLower) {
   }
 }
 
+/** Companion object for AhoCorasickBuilder
+ */
 object AhoCorasickBuilder {
+  /** Represents data stored with a dictionary entry
+   */
   case class Data[T](string:String,data:T)
   implicit def toData[T](x:(String,T)):Data[T] = Data(x._1,x._2)
   def apply[T](in:Seq[Data[T]], charMap:Char => Char = _.toLower):AhoCorasickBuilder[T] =

@@ -20,5 +20,11 @@
 
 package com.corruptmemory.aho_corasick
 
-import AhoCorasickBuilder._
+/** A match result
+ *
+ * @param start The offset from the beginning of the string in characters to the beginning of the match
+ * @param target The match target
+ * @param actual The actual string matched
+ * @param data Arbitrary user-supplied data associated with the target string
+ */
 case class Match[T](start:Int,target:String,actual:String,data:T)
