@@ -4,7 +4,7 @@ import Keys._
 object BuildSettings {
   val buildOrganization = "com.corruptmemory"
   val buildScalaVersion = "2.9.1"
-  val buildVersion      = "0.2"
+  val buildVersion      = "0.3-SNAPSHOT"
 
   lazy val publishSetting = publishTo <<= (version) {
     version: String =>
