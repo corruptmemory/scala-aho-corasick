@@ -4,12 +4,21 @@ import Keys._
 object BuildSettings {
   val buildOrganization = "com.corruptmemory"
   val buildScalaVersion = "2.9.1"
-  val buildVersion      = "0.2-SNAPSHOT"
+  val buildVersion      = "0.2"
+
+  lazy val publishSetting = publishTo <<= (version) {
+    version: String =>
+      val isSnapshot = version.trim.endsWith("SNAPSHOT")
+      val repo   = if(isSnapshot) (Resolver.file("snapshots", file("/"+Path.userHome.toString+"/.ivy2/local")) transactional())
+                   else (Resolver.file("releases",file("/"+Path.userHome.toString + "/scala-aho-corasick-pages/repository")))
+      Some(repo)
+  }
 
   val buildSettings = Defaults.defaultSettings ++ Seq (organization := buildOrganization,
 						       scalaVersion := buildScalaVersion,
 						       version      := buildVersion,
-						       shellPrompt  := ShellPrompt.buildShellPrompt)
+						       shellPrompt  := ShellPrompt.buildShellPrompt,
+                   publishSetting)
 
 }
 
